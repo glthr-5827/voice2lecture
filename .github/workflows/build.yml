@@ -1,0 +1,66 @@
+name: Build Voice2Lecture
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pyinstaller
+
+      - name: Download Vosk model
+        run: |
+          Invoke-WebRequest -Uri "https://alphacephei.com/vosk/models/vosk-model-small-ru-0.22.zip" -OutFile "model.zip"
+          Expand-Archive -Path "model.zip" -DestinationPath "models/"
+          Remove-Item "model.zip"
+
+      - name: Build EXE with PyInstaller
+        run: |
+          pyinstaller --noconfirm --onefile --windowed `
+            --name "Voice2Lecture" `
+            --add-data "models/vosk-model-small-ru-0.22;models/vosk-model-small-ru-0.22" `
+            --collect-all vosk `
+            --hidden-import sounddevice `
+            --hidden-import soundfile `
+            main.py
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Voice2Lecture-Windows
+          path: dist/Voice2Lecture.exe
+
+  release:
+    needs: build-windows
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    permissions:
+      contents: write
+    steps:
+      - name: Download artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: Voice2Lecture-Windows
+          path: ./release
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v3
+        with:
+          files: ./release/Voice2Lecture.exe
+          generate_release_notes: true
